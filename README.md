@@ -1,96 +1,122 @@
+# FastAPI + PostgreSQL App on AWS EKS (Kubernetes)
 
-# FastAPI Kubernetes Deployment on Amazon EKS
-
-This project demonstrates how to containerize a FastAPI application, push the image to Docker Hub, and deploy it on a Kubernetes cluster using Amazon EKS (Elastic Kubernetes Service).
-
----
-
-## 🧠 Project Stack
-
-- **FastAPI** (Python web framework)
-- **Docker** (for containerization)
-- **Docker Hub** (image registry)
-- **Kubernetes** (orchestration)
-- **Amazon EKS** (managed Kubernetes service)
-- **AWS IAM, VPC, EC2, Security Groups** (for cluster setup)
+This project demonstrates how to build a containerized FastAPI application that connects to a PostgreSQL database and deploy it on AWS EKS using Kubernetes.
 
 ---
 
-## 🚀 Project Structure
+## 🧑‍💻 Tech Stack
+- **FastAPI**
+- **PostgreSQL**
+- **Docker**
+- **GitHub Actions**
+- **Kubernetes**
+- **AWS EKS**
+
+---
+
+## 📁 Project Structure
 
 ```
 .
 ├── main.py
 ├── requirements.txt
 ├── Dockerfile
+├── .github/workflows/docker-image.yml
 ├── deployment.yml
-├── service.yml
+└── service.yml
 ```
 
 ---
 
-## 🛠️ Step-by-Step Guide
-
-### 1. Create the FastAPI App (`main.py`)
+## 🚀 FastAPI Code (`main.py`)
 
 ```python
 from fastapi import FastAPI
+import os
+import psycopg2
 
 app = FastAPI()
 
 @app.get("/")
 def read_root():
-    return {"Hello": "World"}
+    return {"msg": "FastAPI working inside Docker!"}
+
+@app.get("/db")
+def db_check():
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            dbname=os.getenv("DB_NAME")
+        )
+        return {"status": "Connected to PostgreSQL"}
+    except:
+        return {"status": "DB Connection Failed"}
 ```
 
 ---
 
-### 2. Create `requirements.txt`
+## 📦 Requirements (`requirements.txt`)
 
 ```
 fastapi
-uvicorn[standard]
+uvicorn
+psycopg2-binary
 ```
 
 ---
 
-### 3. Create the Dockerfile
+## 🐳 Dockerfile
 
 ```Dockerfile
-# Use official Python image
 FROM python:3.11-slim
 
-# Set working directory
 WORKDIR /app
 
-# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source code
 COPY . .
 
-# Expose port
-EXPOSE 8000
+ENV HOST=0.0.0.0
+ENV PORT=8000
 
-# Run FastAPI app
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
 ---
 
-### 4. Build and Push Docker Image
+## 🔄 GitHub Actions Workflow (`.github/workflows/docker-image.yml`)
 
-```bash
-docker build -t mukul0412/fastapi-k8s-app:latest .
-docker push mukul0412/fastapi-k8s-app:latest
+```yaml
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Build and Push Docker image
+      run: |
+        docker build -t mukul0412/fastapi-k8s-app:latest .
+        docker push mukul0412/fastapi-k8s-app:latest
 ```
 
 ---
 
-### 5. Create Kubernetes Manifests
-
-#### `deployment.yml`
+## ☸ Kubernetes Deployment (`deployment.yml`)
 
 ```yaml
 apiVersion: apps/v1
@@ -98,7 +124,7 @@ kind: Deployment
 metadata:
   name: fastapi-deployment
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
       app: fastapi
@@ -108,13 +134,15 @@ spec:
         app: fastapi
     spec:
       containers:
-      - name: fastapi
+      - name: fastapi-container
         image: mukul0412/fastapi-k8s-app:latest
         ports:
         - containerPort: 8000
 ```
 
-#### `service.yml`
+---
+
+## ☸ Kubernetes Service (`service.yml`)
 
 ```yaml
 apiVersion: v1
@@ -126,80 +154,35 @@ spec:
   selector:
     app: fastapi
   ports:
-    - protocol: TCP
-      port: 80
+    - port: 80
       targetPort: 8000
 ```
 
 ---
 
-### 6. Create and Configure EKS Cluster
+## 🧾 Steps Followed
 
-- Created EKS cluster with **Auto Mode**
-- Configured **Cluster IAM Role** with required policies:
-  - `AmazonEKSBlockStoragePolicy`
-  - `AmazonEKSComputePolicy`
-  - `AmazonEKSLoadBalancingPolicy`
-  - `AmazonEKSNetworkingPolicy`
-- Node IAM Role with EC2 permissions and correct trust relationship (`sts:TagSession`).
-- Selected public subnets from default VPC
-
----
-
-### 7. Connect kubectl to EKS
-
-```bash
-aws eks update-kubeconfig --region ap-south-1 --name fastapi-cluster
-kubectl get nodes
-```
-
----
-
-### 8. Deploy to Kubernetes
-
-```bash
-kubectl apply -f deployment.yml
-kubectl apply -f service.yml
-```
-
-Check service:
-
-```bash
-kubectl get svc fastapi-service
-```
-
-> **Note**: LoadBalancer external IP may take a few minutes to provision.
+1. Created FastAPI app (`main.py`)
+2. Added requirements and Dockerized the app
+3. Built and pushed image to Docker Hub using GitHub Actions
+4. Created `deployment.yml` and `service.yml` for Kubernetes
+5. Created EKS cluster via AWS Console (GUI) under Free Tier
+6. Configured kubectl with:
+   ```
+   aws eks update-kubeconfig --region <region> --name <cluster_name>
+   ```
+7. Deployed app:
+   ```
+   kubectl apply -f deployment.yml
+   kubectl apply -f service.yml
+   ```
+8. Waited for `EXTERNAL-IP` to appear in:
+   ```
+   kubectl get svc fastapi-service
+   ```
+9. Opened the public IP in browser to verify app.
 
 ---
 
 ## ✅ Status
-
-✅ EKS Cluster running  
-✅ FastAPI Pods deployed  
-🔄 LoadBalancer external IP pending (due to security group or subnet settings)
-
----
-
-## 🔐 To Fix LoadBalancer Pending
-
-- Ensure EKS worker node security group allows inbound traffic on port 80 from 0.0.0.0/0
-- Ensure public subnets have route to an internet gateway
-- Use AWS Load Balancer Controller for more control (optional)
-
----
-
-## 📦 Next Steps
-
-- Fix external access issue  
-- Add domain via Route 53  
-- Use HTTPS with ACM  
-- Add CI/CD with GitHub Actions
-
----
-
-## 👤 Author
-
-**Mukul Bhardwaj**  
-- [LinkedIn](https://www.linkedin.com/in/mukulbhardwaj0412)  
-- [GitHub](https://github.com/MukulB0412)
-
+Successfully deployed a Dockerized FastAPI app to AWS EKS via Kubernetes with LoadBalancer service.
